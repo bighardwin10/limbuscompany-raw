@@ -26,6 +26,11 @@ jobs:
       - name: 安装 SteamCMD
         uses: buildalon/setup-steamcmd@v1
 
+      - name: 恢复 Steam 登录凭证
+        run: |
+          mkdir -p ~/.steam/steam/config
+          echo "${{ secrets.STEAM_CONFIG }}" > ~/.steam/steam/config/config.vdf
+
       - name: 安装边狱巴士到 ./game
         run: |
           mkdir -p ./game
