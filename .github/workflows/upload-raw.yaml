@@ -55,7 +55,12 @@ jobs:
         run: |
             mkdir game 2>nul
             steamcmd +force_install_dir "%CD%\game" +login %STEAM_NAME% %STEAM_PASSWORD% +app_update 1973530 validate +quit
-
+      
+      - name: 列出游戏目录内容
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path .\game -Recurse -Depth 2 | Select-Object FullName, Length
+      
       # ---------- 提取 Localize 文件 ----------
       - name: 提取 Localize 目录到仓库
         shell: pwsh
