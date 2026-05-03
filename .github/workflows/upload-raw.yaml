@@ -48,22 +48,13 @@ jobs:
 
       # ---------- 下载/更新游戏 ----------
       - name: 安装边狱巴士到 ./game
-        shell: pwsh
+        shell: cmd
+        env:
+          STEAM_NAME: ${{ secrets.STEAM_NAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
         run: |
-          # 创建目标目录
-          New-Item -ItemType Directory -Force -Path "$pwd\game" | Out-Null
-          
-          # steamcmd 命令：使用 cmd /c 调用，避免 PowerShell 对参数的特殊解释
-          # 注意：+force_install_dir 的路径必须使用反斜杠，并且用双引号包裹
-          $installDir = "$pwd\game"
-          $steamCmdPath = (Get-Command steamcmd).Source
-          
-          & cmd /c "$steamCmdPath +force_install_dir `"$installDir`" +login ${{ secrets.STEAM_NAME }} ${{ secrets.STEAM_PASSWORD }} +app_update 1973530 validate +quit"
-          
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "SteamCMD 安装失败，退出码: $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
+            mkdir game 2>nul
+            steamcmd +force_install_dir "%CD%\game" +login %STEAM_NAME% %STEAM_PASSWORD% +app_update 1973530 validate +quit
 
       # ---------- 提取 Localize 文件 ----------
       - name: 提取 Localize 目录到仓库
