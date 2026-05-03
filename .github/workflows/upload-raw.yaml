@@ -7,62 +7,100 @@ on:
 
 jobs:
   extract-and-push:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
-      contents: write      # 允许推送到仓库
+      contents: write
 
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # 获取完整历史，以便后续推送
+          fetch-depth: 0
 
+      # ---------- 磁盘清理（PowerShell 版本）----------
       - name: 清理磁盘空间
+        shell: pwsh
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo apt-get clean
-          docker system prune -af
+          Write-Host "清理前磁盘空间:"
+          Get-PSDrive C | Select-Object Used,Free
+          
+          # 删除 dotnet SDK（约2-3GB）
+          if (Test-Path "C:\Program Files\dotnet") {
+            Remove-Item -Recurse -Force "C:\Program Files\dotnet" -ErrorAction SilentlyContinue
+          }
+          # 删除 Android SDK（约10GB）
+          if (Test-Path "$env:LOCALAPPDATA\Android") {
+            Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Android" -ErrorAction SilentlyContinue
+          }
+          # 删除 NuGet 缓存
+          if (Test-Path "$env:USERPROFILE\.nuget") {
+            Remove-Item -Recurse -Force "$env:USERPROFILE\.nuget" -ErrorAction SilentlyContinue
+          }
+          # 清理临时文件夹
+          Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
+          
+          Write-Host "清理后磁盘空间:"
+          Get-PSDrive C | Select-Object Used,Free
 
+      # ---------- 安装 SteamCMD ----------
       - name: 安装 SteamCMD
         uses: buildalon/setup-steamcmd@v1
 
+      # ---------- 下载/更新游戏 ----------
       - name: 安装边狱巴士到 ./game
+        shell: pwsh
         run: |
-          mkdir -p ./game
-          # 重要：+force_install_dir 必须在 +login 之前
-          steamcmd +force_install_dir "$(pwd)/game" \
-                    +login ${{ secrets.STEAM_NAME }} ${{ secrets.STEAM_PASSWORD }} \
-                    +app_update 1973530 validate \
-                    +quit
+          # 创建目标目录
+          New-Item -ItemType Directory -Force -Path "$pwd\game" | Out-Null
+          
+          # steamcmd 命令：使用 cmd /c 调用，避免 PowerShell 对参数的特殊解释
+          # 注意：+force_install_dir 的路径必须使用反斜杠，并且用双引号包裹
+          $installDir = "$pwd\game"
+          $steamCmdPath = (Get-Command steamcmd).Source
+          
+          & cmd /c "$steamCmdPath +force_install_dir `"$installDir`" +login ${{ secrets.STEAM_NAME }} ${{ secrets.STEAM_PASSWORD }} +app_update 1973530 validate +quit"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "SteamCMD 安装失败，退出码: $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
 
+      # ---------- 提取 Localize 文件 ----------
       - name: 提取 Localize 目录到仓库
+        shell: pwsh
         run: |
-          SOURCE_DIR="./game/LimbusCompany_Data/Assets/Resources_moved/Localize"
-          TARGET_DIR="./LimbusCompany_Localize"   # 仓库内的目标目录，可自行修改
-          if [ -d "$SOURCE_DIR" ]; then
-            # 先清空旧目录，保证完全同步
-            rm -rf "$TARGET_DIR"
-            mkdir -p "$TARGET_DIR"
-            cp -r "$SOURCE_DIR"/* "$TARGET_DIR"/
-            echo "文件已复制到 $TARGET_DIR"
-            ls -la "$TARGET_DIR"
-          else
-            echo "错误：未找到 Localize 目录，请检查游戏安装路径"
+          $sourceDir = "$pwd\game\LimbusCompany_Data\Assets\Resources_moved\Localize"
+          $targetDir = "$pwd\LimbusCompany_Localize"
+          
+          if (Test-Path $sourceDir) {
+            # 删除旧目录并创建新目录
+            if (Test-Path $targetDir) {
+              Remove-Item -Recurse -Force $targetDir
+            }
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            # 复制文件
+            Copy-Item -Path "$sourceDir\*" -Destination $targetDir -Recurse -Force
+            Write-Host "文件已复制到 $targetDir"
+            # 列出内容
+            Get-ChildItem $targetDir
+          } else {
+            Write-Error "错误：未找到 Localize 目录，请检查游戏安装路径: $sourceDir"
             exit 1
-          fi
+          }
 
+      # ---------- 推送到 master 分支 ----------
       - name: 推送到 master 分支
+        shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # 确保在 master 分支上操作
           git checkout master
-          # 添加所有变更
           git add ./LimbusCompany_Localize
-          # 只有有变更时才提交
-          if git diff --staged --quiet; then
-            echo "没有文件变化，跳过提交"
-          else
-            git commit -m "auto: 更新边狱巴士语言文件 $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          $diff = git diff --staged --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "没有文件变化，跳过提交"
+          } else {
+            $date = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            git commit -m "auto: 更新边狱巴士语言文件 $date UTC"
             git push origin master
-          fi
+          }
