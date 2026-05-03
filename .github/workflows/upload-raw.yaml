@@ -55,12 +55,21 @@ jobs:
         run: |
             mkdir game 2>nul
             steamcmd +force_install_dir "%CD%\game" +login %STEAM_NAME% %STEAM_PASSWORD% +app_update 1973530 validate +quit
-      
-      - name: 列出游戏目录内容
+
+      - name: 诊断游戏目录内容
         shell: pwsh
         run: |
-          Get-ChildItem -Path .\game -Recurse -Depth 2 | Select-Object FullName, Length
-      
+          Write-Host "=================================================="
+          Write-Host "所有文件和文件夹（包含隐藏文件）:"
+          Get-ChildItem -Path .\game -Force | Format-Table Name, Mode
+          Write-Host "=================================================="
+          Write-Host "递归列出所有文件和文件夹:"
+          Get-ChildItem -Path .\game -Recurse | Select-Object FullName, Length
+          Write-Host "=================================================="
+          Write-Host "查找 'Localize' 文件夹:"
+          Get-ChildItem -Path .\game -Recurse -Directory -Filter "*local*" -Force | Select-Object FullName
+          Write-Host "=================================================="
+
       # ---------- 提取 Localize 文件 ----------
       - name: 提取 Localize 目录到仓库
         shell: pwsh
@@ -90,7 +99,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout master
+          git checkout main
           git add ./LimbusCompany_Localize
           $diff = git diff --staged --quiet
           if ($LASTEXITCODE -eq 0) {
@@ -98,5 +107,5 @@ jobs:
           } else {
             $date = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
             git commit -m "auto: 更新边狱巴士语言文件 $date UTC"
-            git push origin master
+            git push origin main
           }
